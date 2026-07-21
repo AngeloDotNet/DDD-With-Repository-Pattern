@@ -9,4 +9,5 @@
   <Project Path="src/Repository.Application/Repository.Application.csproj" Id="7b01c01b-ccab-42bb-9c0f-35c5501f9fbf" />
   <Project Path="src/Repository.Domain/Repository.Domain.csproj" Id="51577d59-2878-4ebc-8e9a-dc1360dac70d" />
   <Project Path="src/Repository.Infrastructure/Repository.Infrastructure.csproj" Id="dbd7b824-08ec-4c43-b237-ba6f93fd5bf3" />
+  <Project Path="tests/Repository.Tests/Repository.Tests.csproj" Id="d54821ef-3952-43d0-b10a-b9c40f406e5a" />
 </Solution>
