@@ -1,26 +1,19 @@
-<!--
-# DDD-With-Repository-Pattern
-An example of applying DDD and repository patterns in .NET
--->
+# Esempio Repository Pattern (DDD) con EF Core e UnitOfWork (+ xUnit tests)
 
-# Esempio Repository Pattern (DDD) - Async e Id generico
+Cosa contiene:
 
-Questo repository dimostra:
-- Domain-Driven Design (separazione Domain/Application/Infrastructure/API)
-- Repository generico con Id generico (TKey)
-- Operazioni CRUD estese: Add, AddRange, Get, GetById, GetRange, Update, UpdateRange, Patch, PatchRange, Delete, DeleteRange
-- Tutto asincrono e con CancellationToken
-- Implementazione in-memory come esempio (puoi sostituirla con EF Core nella Infrastructure)
+- Domain layer con IEntity<TKey>, Entity<TKey>, Person aggregate.
+- IRepository<TEntity,TKey> (operazioni CRUD estese).
+- IUnitOfWork e implementazione EfUnitOfWork.
+- EfRepository<TEntity,TKey> che usa AppDbContext (EF Core).
+- PersonService che usa repository + UnitOfWork (commit esplicito).
+- Test xUnit che coprono tutti i metodi usando provider InMemory di EF Core.
 
-Come provare:
+Nota di design:
 
-1. Creare una soluzione .NET 7/8 e includere i progetti Domain, Application, Infrastructure, Api.
-2. Registrare dipendenze in Startup/Program:
-   - services.AddSingleton<IRepository<Person, Guid>, InMemoryRepository<Person, Guid>>();
-   - services.AddScoped<PersonService>();
-3. Avviare l'API e testare gli endpoint (POST/GET/PUT/PATCH/DELETE).
+- I repository manipolano il DbContext ma NON chiamano SaveChanges. Questo permette di aggregare più operazioni e committare tramite IUnitOfWork.
+- Per produzione usare provider reale (SqlServer/Postgres) e gestire transazioni complesse se necessario.
 
-Note di progettazione:
+Test:
 
-- Le patch dovrebbero preferibilmente passare attraverso metodi di dominio (es. person.SetAge(...), person.UpdateName(...)) per mantenere invarianti.
-- Per la persistenza reale usare EF Core e implementare transazioni/UnitOfWork se necessario.
+- I test forniti usano `UseInMemoryDatabase` per isolamento e verificano che ogni operazione sia correttamente applicata dopo `SaveChangesAsync`.
