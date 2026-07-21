@@ -1,5 +1,3 @@
-using Repository.Domain.Entities;
-
 namespace Repository.API.DTOs;
 
 public sealed class PersonPatchDto
@@ -13,7 +11,7 @@ public sealed class PersonPatchDto
     public int? AgeIncrement { get; init; }
 
     // Applica le modifiche all'aggregate usando i metodi del dominio
-    public void ApplyTo(Person person)
+    public void ApplyTo(Repository.Domain.Entities.Person person)
     {
         // Aggiorna nome solo se entrambi i campi sono forniti
         if (FirstName is not null && LastName is not null)
