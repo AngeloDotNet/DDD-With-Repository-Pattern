@@ -6,7 +6,7 @@ namespace Repository.Infrastructure;
 
 // Implementazione IN-MEMORY adatta per test o demo. Sostituibile con EF Core.
 public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>
-    where TEntity : class
+    where TEntity : class, new()
     where TKey : IEquatable<TKey>
 {
     private readonly ConcurrentDictionary<TKey, TEntity> store = new();
