@@ -1,7 +1,9 @@
-﻿namespace Repository.Domain.Entities;
+﻿using Repository.Domain.Entities.Interfaces;
+
+namespace Repository.Domain.Entities;
 
 // Base entity con Id generico e controllo di uguaglianza
-public abstract class Entity<TKey>(TKey id) where TKey : IEquatable<TKey>
+public abstract class Entity<TKey>(TKey id) : IEntity<TKey> where TKey : IEquatable<TKey>
 {
     public TKey Id { get; protected set; } = id;
 

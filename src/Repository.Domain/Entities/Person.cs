@@ -3,8 +3,15 @@
 namespace Repository.Domain.Entities;
 
 // Esempio di aggregate root con alcune regole di dominio
-public class Person : Entity<Guid>, IAggregateRoot
+public class Person : Entity<Guid>, IEntity<Guid>, IAggregateRoot
 {
+    public Person() : base(Guid.Empty)
+    {
+        FirstName = string.Empty;
+        LastName = string.Empty;
+        Age = 0;
+    } // Add this public parameterless constructor
+
     public string FirstName { get; private set; }
     public string LastName { get; private set; }
     public int Age { get; private set; }
