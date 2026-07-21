@@ -4,7 +4,7 @@ namespace Repository.Domain.Repositories.Interfaces;
 
 // Repository generico per aggregate root
 public interface IRepository<TEntity, TKey>
-    where TEntity : class
+    where TEntity : class, new()
     where TKey : IEquatable<TKey>
 {
     // Create
@@ -21,7 +21,7 @@ public interface IRepository<TEntity, TKey>
     Task UpdateAsync(TEntity entity, CancellationToken ct = default);
     Task UpdateRangeAsync(IEnumerable<TEntity> entities, CancellationToken ct = default);
 
-    // Patch: applica un'azione sul singolo aggregate caricato e salva
+    // Patch: applica un'azione sul singolo aggregate caricato e salva nel contesto
     Task<TEntity?> PatchAsync(TKey id, Func<TEntity, Task> patchAction, CancellationToken ct = default);
 
     // Patch range: applica patchAction a tutti gli elementi selezionati (es. per bulk)
