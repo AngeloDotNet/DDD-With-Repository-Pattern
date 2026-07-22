@@ -21,9 +21,6 @@ public class Program
             c.SwaggerDoc("v1", new OpenApiInfo { Title = "Example API", Version = "v1" });
         });
 
-        //// Configure In-Memory Database and Dependency Injection
-        //builder.Services.AddDbContext<AppDbContext>(opt => opt.UseInMemoryDatabase(Guid.NewGuid().ToString()));
-
         // DbContext: try to use a configured connection string, fallback to InMemory for demo/tests
         var conn = builder.Configuration.GetConnectionString("Default");
         builder.Services.AddDbContext<AppDbContext>(opts =>
@@ -39,11 +36,11 @@ public class Program
             }
         });
 
-        // Repositories and UnitOfWork
+        // Registrazione repository: EfRepository implementa sia IRepository che IReadRepository
         builder.Services.AddScoped(typeof(IRepository<,>), typeof(EfRepository<,>));
-        builder.Services.AddScoped<IUnitOfWork, EfUnitOfWork>();
+        builder.Services.AddScoped(typeof(IReadRepository<,>), typeof(EfRepository<,>));
 
-        // Application services
+        builder.Services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         builder.Services.AddScoped<PersonService>();
 
         var app = builder.Build();
