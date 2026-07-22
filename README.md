@@ -18,34 +18,22 @@ Test:
 
 - I test forniti usano `UseInMemoryDatabase` per isolamento e verificano che ogni operazione sia correttamente applicata dopo `SaveChangesAsync`.
 
-Brevi esempi d'uso (all'interno di un service o repository) — in modo conciso:
+Brevi esempi d'uso:
 
-Include dinamici:
+Ordinamento tipizzato (stesso tipo chiavi, ad es. string):
 
 ```csharp
-var q = ctx.People.IncludeProperties(p => p.Relation1, p => p.Relation2);
+var q = ctx.People.OrderByFields<Person, string>((p => p.LastName, true), (p => p.FirstName, true));
 ```
 
 Filtro dinamico via lambda:
 
 ```csharp
-var q = ctx.People.ApplyFilter(q => q.Where(p => p.Age > 18));
+var q = ctx.People.OrderByFields<Person, int>((p => p.Age, false));
 ```
 
-Ordinamento dinamico via lambda:
+Se hai selectors con tipi diversi puoi ancora usare la versione non tipizzata (Expression<Func<T, object>>) o comporre ApplyOrdering con lambdas fortemente tipizzate:
 
 ```csharp
 var q = ctx.People.ApplyOrdering(q => q.OrderBy(p => p.LastName).ThenByDescending(p => p.Age));
-```
-
-Ordinamento via helper OrderByFields:
-
-```csharp
-var q = ctx.People.OrderByFields((p => p.LastName, true), (p => p.FirstName, true));
-```
-
-Paginazione con risultato totalizzato:
-
-```csharp
-var page = await ctx.People.ApplyFilter(filter).ApplyOrdering(orderBy).ToPagedResultAsync(page, pageSize);
 ```
