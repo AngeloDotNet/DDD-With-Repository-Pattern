@@ -27,7 +27,7 @@ public static class QueryExtensions
 
     /// <summary>
     /// Applica un filtro dinamico passato come lambda che prende e restituisce IQueryable.
-    /// Uso: query = query.ApplyFilter(q => q.Where(x => x.Age &gt; 18));
+    /// Uso: query = query.ApplyFilter(q => q.Where(x => x.Age > 18));
     /// </summary>
     public static IQueryable<T> ApplyFilter<T>(this IQueryable<T> query, Func<IQueryable<T>, IQueryable<T>>? filter)
     {
@@ -55,6 +55,7 @@ public static class QueryExtensions
 
     /// <summary>
     /// Helper che applica una serie di ordinamenti specificati come (selector, ascending) in sequenza.
+    /// Retrocompatibile (usa Expression<Func<T, object>>) - può introdurre boxing/boxing-like conversions.
     /// Uso: query = query.OrderByFields((x => x.LastName, true), (x => x.FirstName, true));
     /// </summary>
     public static IQueryable<T> OrderByFields<T>(this IQueryable<T> source, params (Expression<Func<T, object>> selector, bool ascending)[] orderings)
@@ -65,7 +66,38 @@ public static class QueryExtensions
         }
 
         IOrderedQueryable<T>? ordered = null;
+        for (var i = 0; i < orderings.Length; i++)
+        {
+            var sel = orderings[i].selector;
+            var asc = orderings[i].ascending;
 
+            if (i == 0)
+            {
+                ordered = asc ? source.OrderBy(sel) : source.OrderByDescending(sel);
+            }
+            else
+            {
+                ordered = asc ? ordered!.ThenBy(sel) : ordered!.ThenByDescending(sel);
+            }
+        }
+
+        return ordered ?? source;
+    }
+
+    /// <summary>
+    /// Overload tipizzato per OrderByFields per evitare boxing.
+    /// Tutti i selectors passati devono avere lo stesso tipo di chiave TKey.
+    /// Uso: query = query.OrderByFields<string>((x => x.LastName, true), (x => x.FirstName, true));
+    /// oppure type inference: query.OrderByFields((Expression<Func<T,string>>) (x => x.LastName), true) ... (meglio specificare TKey esplicitamente quando necessario)
+    /// </summary>
+    public static IQueryable<T> OrderByFields<T, TKey>(this IQueryable<T> source, params (Expression<Func<T, TKey>> selector, bool ascending)[] orderings)
+    {
+        if (orderings == null || orderings.Length == 0)
+        {
+            return source;
+        }
+
+        IOrderedQueryable<T>? ordered = null;
         for (var i = 0; i < orderings.Length; i++)
         {
             var sel = orderings[i].selector;
