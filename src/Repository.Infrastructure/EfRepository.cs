@@ -2,6 +2,8 @@
 using Microsoft.EntityFrameworkCore;
 using Repository.Domain.Entities.Interfaces;
 using Repository.Domain.Repositories.Interfaces;
+using Repository.Infrastructure.Extensions;
+using Repository.Infrastructure.Models;
 
 namespace Repository.Infrastructure;
 
@@ -35,6 +37,7 @@ public class EfRepository<TEntity, TKey> : IRepository<TEntity, TKey>
     public async Task DeleteAsync(TKey id, CancellationToken ct = default)
     {
         var entity = await GetByIdAsync(id, ct).ConfigureAwait(false);
+
         if (entity != null)
         {
             dbSet.Remove(entity);
@@ -71,7 +74,6 @@ public class EfRepository<TEntity, TKey> : IRepository<TEntity, TKey>
 
     public async Task<TEntity?> GetByIdAsync(TKey id, CancellationToken ct = default)
     {
-        // FindAsync accepts object[] + CancellationToken overload pattern
         var found = await dbSet.FindAsync([id], ct).ConfigureAwait(false);
         return found;
     }
@@ -91,6 +93,7 @@ public class EfRepository<TEntity, TKey> : IRepository<TEntity, TKey>
     public async Task<TEntity?> PatchAsync(TKey id, Func<TEntity, Task> patchAction, CancellationToken ct = default)
     {
         var entity = await GetByIdAsync(id, ct).ConfigureAwait(false);
+
         if (entity == null)
         {
             return null;
@@ -118,4 +121,37 @@ public class EfRepository<TEntity, TKey> : IRepository<TEntity, TKey>
 
         return updated;
     }
+
+    // Nuovo: FindPagedAsync che accetta direttamente lambdas per filter/order/includes e restituisce PagedResult<TEntity>
+    public async Task<PagedResult<TEntity>> FindPagedAsync(
+        Func<IQueryable<TEntity>, IQueryable<TEntity>>? filter = null,
+        Func<IQueryable<TEntity>, IOrderedQueryable<TEntity>>? orderBy = null,
+        Expression<Func<TEntity, object>>[]? includes = null,
+        int page = 1,
+        int pageSize = 10,
+        CancellationToken ct = default)
+    {
+        IQueryable<TEntity> query = dbSet.AsQueryable();
+
+        if (includes != null && includes.Length > 0)
+        {
+            query = query.IncludeProperties(includes);
+        }
+
+        if (filter != null)
+        {
+            query = filter(query);
+        }
+
+        if (orderBy != null)
+        {
+            query = orderBy(query);
+        }
+
+        return await query.ToPagedResultAsync(page, pageSize, ct).ConfigureAwait(false);
+    }
+
+    // Overload che accetta solo i parametri di paginazione (comodo)
+    public Task<PagedResult<TEntity>> FindPagedAsync(int page, int pageSize, CancellationToken ct = default)
+        => FindPagedAsync(null, null, null, page, pageSize, ct);
 }
