@@ -4,26 +4,24 @@ using Repository.API.DTOs;
 using Repository.Application.Services;
 using Repository.Domain.Entities;
 using Repository.Domain.Repositories.Interfaces;
-using Repository.Infrastructure;
+using Repository.Infrastructure.Extensions;
 
 namespace Repository.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class PersonController(PersonService service, IRepository<Person, Guid> repo) : ControllerBase
+public class PersonController(PersonService service, IReadRepository<Person, Guid> reader) : ControllerBase
 {
-    private readonly EfRepository<Person, Guid> repoConcrete = repo as EfRepository<Person, Guid> ?? throw new ArgumentException("Expected EfRepository<Person,Guid> for advanced queries"); // per FindPagedAsync helper (esempio)
-
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] PersonCreateDto dto, CancellationToken ct)
+    public async Task<IActionResult> CreateAsync([FromBody] PersonCreateDto dto, CancellationToken ct)
     {
         var person = new Person(Guid.NewGuid(), dto.FirstName, dto.LastName, dto.Age);
         await service.CreateAsync(person, ct);
-        return CreatedAtAction(nameof(GetByIdAsync), new { id = person.Id }, person);
+        return CreatedAtAction(nameof(GetById), new { id = person.Id }, person);
     }
 
     [HttpGet("{id:guid}")]
-    public async Task<IActionResult> GetByIdAsync(Guid id, CancellationToken ct)
+    public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
         var p = await service.GetByIdAsync(id, ct);
 
@@ -40,13 +38,6 @@ public class PersonController(PersonService service, IRepository<Person, Guid> r
     {
         var all = await service.GetAllAsync(ct);
         return Ok(all);
-    }
-
-    [HttpGet("page")]
-    public async Task<IActionResult> GetPageAsync([FromQuery] int page = 1, [FromQuery] int size = 10, CancellationToken ct = default)
-    {
-        var pageData = await service.GetPageAsync(page, size, ct);
-        return Ok(pageData);
     }
 
     [HttpPut("{id:guid}")]
@@ -67,7 +58,7 @@ public class PersonController(PersonService service, IRepository<Person, Guid> r
     }
 
     [HttpPatch("{id:guid}")]
-    public async Task<IActionResult> PatchAsync(Guid id, [FromBody] PersonPatchDto patchDoc, CancellationToken ct)
+    public async Task<IActionResult> Patch(Guid id, [FromBody] PersonPatchDto patchDoc, CancellationToken ct)
     {
         if (patchDoc == null)
         {
@@ -88,42 +79,30 @@ public class PersonController(PersonService service, IRepository<Person, Guid> r
         return Ok(patched);
     }
 
-    [HttpPatch("bulk")]
-    public async Task<IActionResult> PatchBulkAsync([FromBody] BulkPatchDto dto, CancellationToken ct)
-    {
-        var updated = await service.PatchManyAsync(dto.Ids, async person =>
-        {
-            person.SetAge(person.Age + dto.AgeIncrement);
-            await Task.CompletedTask;
-        }, ct);
-
-        return Ok(updated);
-    }
-
     [HttpDelete("{id:guid}")]
-    public async Task<IActionResult> DeleteAsync(Guid id, CancellationToken ct)
+    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
         await service.DeleteAsync(id, ct);
         return NoContent();
     }
 
-    // Nuovo endpoint: ricerca/paginazione/ordinamento dinamico via query string
-    // Esempio: GET /api/person?firstName=mar&minAge=20&sortBy=lastName&sortDir=asc&page=1&size=10
+    // Endpoint di ricerca/paginazione/ordinamento dinamico via query string.
+    // Supporta sorting per nomi proprietà (anche nested con dot notation), senza switch manuale.
+    // Esempio: GET /api/person/search?firstName=mar&minAge=20&sortBy=lastName,age&sortDir=asc,desc&page=1&size=10
     [HttpGet("search")]
-    public async Task<IActionResult> SearchAsync(
+    public async Task<IActionResult> Search(
         [FromQuery] string? firstName,
         [FromQuery] string? lastName,
         [FromQuery] int? minAge,
         [FromQuery] int? maxAge,
-        [FromQuery] string? sortBy,
-        [FromQuery] string? sortDir,
+        [FromQuery] string? sortBy,        // comma separated property names
+        [FromQuery] string? sortDir,       // comma separated directions: asc/desc
         [FromQuery] int page = 1,
         [FromQuery] int size = 10,
         CancellationToken ct = default)
     {
-        // Costruisco il filtro dinamico come lambda
-        Func<IQueryable<Person>, IQueryable<Person>>? filter = null;
-        filter = q =>
+        // filtro dinamico come lambda
+        Func<IQueryable<Person>, IQueryable<Person>>? filter = q =>
         {
             if (!string.IsNullOrWhiteSpace(firstName))
             {
@@ -148,36 +127,24 @@ public class PersonController(PersonService service, IRepository<Person, Guid> r
             return q;
         };
 
-        // Costruisco l'ordering dinamico (supporta alcuni campi noti). Puoi estendere con reflection se vuoi.
+        // costruisco ordinamenti dinamici da query string
         Func<IQueryable<Person>, IOrderedQueryable<Person>>? orderBy = null;
 
         if (!string.IsNullOrWhiteSpace(sortBy))
         {
-            var dir = (sortDir ?? "asc").ToLowerInvariant();
+            var fields = sortBy.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var dirs = (sortDir ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-            switch (sortBy.ToLowerInvariant())
-            {
-                case "firstname":
-                    orderBy = q => dir == "asc" ? q.OrderBy(p => p.FirstName) : q.OrderByDescending(p => p.FirstName);
-                    break;
-                case "lastname":
-                    orderBy = q => dir == "asc" ? q.OrderBy(p => p.LastName) : q.OrderByDescending(p => p.LastName);
-                    break;
-                case "age":
-                    orderBy = q => dir == "asc" ? q.OrderBy(p => p.Age) : q.OrderByDescending(p => p.Age);
-                    break;
-                default:
-                    // fallback: nessun ordering se campo non noto
-                    orderBy = null;
-                    break;
-            }
+            var orderings = fields
+                .Select((f, i) => (propertyName: f, ascending: (i < dirs.Length ? dirs[i] : "asc").Equals("asc", StringComparison.OrdinalIgnoreCase)))
+                .ToArray();
+
+            orderBy = q => (IOrderedQueryable<Person>)q.OrderByPropertyNames(orderings);
         }
 
-        // Includes: in questo esempio Person non ha navigations; se ne avessi potresti costruire includes expressions.
-        Expression<Func<Person, object>>[]? includes = null;
+        Expression<Func<Person, object>>[]? includes = null; // aggiungi include se necessario
 
-        // Uso il metodo helper di EfRepository
-        var paged = await repoConcrete.FindPagedAsync(filter, orderBy, includes, page, size, ct);
+        var paged = await reader.FindPagedAsync(filter, orderBy, includes, page, size, ct);
         return Ok(paged);
     }
 }
