@@ -17,3 +17,35 @@ Nota di design:
 Test:
 
 - I test forniti usano `UseInMemoryDatabase` per isolamento e verificano che ogni operazione sia correttamente applicata dopo `SaveChangesAsync`.
+
+Brevi esempi d'uso (all'interno di un service o repository) — in modo conciso:
+
+Include dinamici:
+
+```csharp
+var q = ctx.People.IncludeProperties(p => p.Relation1, p => p.Relation2);
+```
+
+Filtro dinamico via lambda:
+
+```csharp
+var q = ctx.People.ApplyFilter(q => q.Where(p => p.Age > 18));
+```
+
+Ordinamento dinamico via lambda:
+
+```csharp
+var q = ctx.People.ApplyOrdering(q => q.OrderBy(p => p.LastName).ThenByDescending(p => p.Age));
+```
+
+Ordinamento via helper OrderByFields:
+
+```csharp
+var q = ctx.People.OrderByFields((p => p.LastName, true), (p => p.FirstName, true));
+```
+
+Paginazione con risultato totalizzato:
+
+```csharp
+var page = await ctx.People.ApplyFilter(filter).ApplyOrdering(orderBy).ToPagedResultAsync(page, pageSize);
+```
