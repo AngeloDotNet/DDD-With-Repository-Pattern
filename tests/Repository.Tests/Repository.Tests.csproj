@@ -24,7 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Repository.Application\Repository.Application.csproj" />
+    <ProjectReference Include="..\..\src\Repository.API\Repository.API.csproj" />
   </ItemGroup>
 
   <ItemGroup>
