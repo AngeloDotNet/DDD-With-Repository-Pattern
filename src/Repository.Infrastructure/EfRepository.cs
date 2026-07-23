@@ -8,8 +8,8 @@ using Repository.Infrastructure.Models;
 namespace Repository.Infrastructure;
 
 // Implementazione EF Core del repository generico.
-// Nota: questa implementazione NON chiama SaveChanges; il commit è responsabilità del UnitOfWork.
-public class EfRepository<TEntity, TKey> : IRepository<TEntity, TKey>
+// Implementa sia IRepository (write+basicread) che IReadRepository (query avanzate).
+public class EfRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IReadRepository<TEntity, TKey>
     where TEntity : class, IEntity<TKey>, new()
     where TKey : IEquatable<TKey>
 {
@@ -48,11 +48,11 @@ public class EfRepository<TEntity, TKey> : IRepository<TEntity, TKey>
     {
         foreach (var id in ids)
         {
-            var entity = await GetByIdAsync(id, ct).ConfigureAwait(false);
+            var e = await GetByIdAsync(id, ct).ConfigureAwait(false);
 
-            if (entity != null)
+            if (e != null)
             {
-                dbSet.Remove(entity);
+                dbSet.Remove(e);
             }
         }
     }
@@ -93,7 +93,6 @@ public class EfRepository<TEntity, TKey> : IRepository<TEntity, TKey>
     public async Task<TEntity?> PatchAsync(TKey id, Func<TEntity, Task> patchAction, CancellationToken ct = default)
     {
         var entity = await GetByIdAsync(id, ct).ConfigureAwait(false);
-
         if (entity == null)
         {
             return null;
@@ -110,7 +109,6 @@ public class EfRepository<TEntity, TKey> : IRepository<TEntity, TKey>
         foreach (var id in ids)
         {
             var e = await GetByIdAsync(id, ct).ConfigureAwait(false);
-
             if (e != null)
             {
                 await patchAction(e).ConfigureAwait(false);
@@ -122,7 +120,7 @@ public class EfRepository<TEntity, TKey> : IRepository<TEntity, TKey>
         return updated;
     }
 
-    // Nuovo: FindPagedAsync che accetta direttamente lambdas per filter/order/includes e restituisce PagedResult<TEntity>
+    // FindPagedAsync implementato usando QueryExtensions
     public async Task<PagedResult<TEntity>> FindPagedAsync(
         Func<IQueryable<TEntity>, IQueryable<TEntity>>? filter = null,
         Func<IQueryable<TEntity>, IOrderedQueryable<TEntity>>? orderBy = null,
@@ -131,7 +129,7 @@ public class EfRepository<TEntity, TKey> : IRepository<TEntity, TKey>
         int pageSize = 10,
         CancellationToken ct = default)
     {
-        IQueryable<TEntity> query = dbSet.AsQueryable();
+        var query = dbSet.AsQueryable();
 
         if (includes != null && includes.Length > 0)
         {
@@ -150,8 +148,4 @@ public class EfRepository<TEntity, TKey> : IRepository<TEntity, TKey>
 
         return await query.ToPagedResultAsync(page, pageSize, ct).ConfigureAwait(false);
     }
-
-    // Overload che accetta solo i parametri di paginazione (comodo)
-    public Task<PagedResult<TEntity>> FindPagedAsync(int page, int pageSize, CancellationToken ct = default)
-        => FindPagedAsync(null, null, null, page, pageSize, ct);
 }

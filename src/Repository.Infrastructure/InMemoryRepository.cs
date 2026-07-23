@@ -1,6 +1,8 @@
 ﻿using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using Repository.Domain.Repositories.Interfaces;
+using Repository.Infrastructure.Extensions;
+using Repository.Infrastructure.Models;
 
 namespace Repository.Infrastructure;
 
@@ -138,5 +140,34 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>
         }
 
         return (TKey?)prop.GetValue(entity);
+    }
+
+    public async Task<PagedResult<TEntity>> FindPagedAsync(
+        Func<IQueryable<TEntity>, IQueryable<TEntity>>? filter = null,
+        Func<IQueryable<TEntity>, IOrderedQueryable<TEntity>>? orderBy = null,
+        Expression<Func<TEntity, object>>[]? includes = null,
+        int page = 1,
+        int pageSize = 10,
+        CancellationToken ct = default)
+    {
+        // Use store.Values to get IQueryable<TEntity> instead of store.AsQueryable() which returns IQueryable<KeyValuePair<TKey, TEntity>>
+        var query = store.Values.AsQueryable();
+
+        if (includes != null && includes.Length > 0)
+        {
+            query = query.IncludeProperties(includes);
+        }
+
+        if (filter != null)
+        {
+            query = filter(query);
+        }
+
+        if (orderBy != null)
+        {
+            query = orderBy(query);
+        }
+
+        return await query.ToPagedResultAsync(page, pageSize, ct).ConfigureAwait(false);
     }
 }
