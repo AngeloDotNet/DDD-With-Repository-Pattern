@@ -1,5 +1,5 @@
 ﻿using System.Linq.Expressions;
-using Repository.Infrastructure.Models;
+using Repository.Domain.Queries;
 
 namespace Repository.Domain.Repositories.Interfaces;
 
@@ -15,6 +15,15 @@ public interface IReadRepository<TEntity, TKey>
     Task<PagedResult<TEntity>> FindPagedAsync(
         Func<IQueryable<TEntity>, IQueryable<TEntity>>? filter = null,
         Func<IQueryable<TEntity>, IOrderedQueryable<TEntity>>? orderBy = null,
+        Expression<Func<TEntity, object>>[]? includes = null,
+        int page = 1,
+        int pageSize = 10,
+        CancellationToken ct = default);
+
+    // Overload convenience che accetta sortBy/sortDir come string (comma separated)
+    Task<PagedResult<TEntity>> FindPagedAsync(
+        Func<IQueryable<TEntity>, IQueryable<TEntity>>? filter,
+        string? sortBy, string? sortDir,
         Expression<Func<TEntity, object>>[]? includes = null,
         int page = 1,
         int pageSize = 10,
