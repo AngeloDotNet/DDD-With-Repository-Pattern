@@ -4,6 +4,7 @@ using Microsoft.OpenApi.Models;
 using Repository.Application.Services;
 using Repository.Domain.Repositories.Interfaces;
 using Repository.Infrastructure;
+using Repository.Infrastructure.Middleware;
 
 namespace Repository.API;
 
@@ -45,6 +46,9 @@ public class Program
 
         var app = builder.Build();
         app.UseHttpsRedirection();
+
+        // Usare il middleware prima dei controller
+        app.UseMiddleware<QueryMappingMiddleware>();
 
         if (app.Environment.IsDevelopment())
         {
