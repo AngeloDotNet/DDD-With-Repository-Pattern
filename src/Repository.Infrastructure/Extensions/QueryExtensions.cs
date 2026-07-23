@@ -1,4 +1,5 @@
 ﻿using System.Linq.Expressions;
+using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Repository.Infrastructure.Models;
 
@@ -27,7 +28,6 @@ public static class QueryExtensions
 
     /// <summary>
     /// Applica un filtro dinamico passato come lambda che prende e restituisce IQueryable.
-    /// Uso: query = query.ApplyFilter(q => q.Where(x => x.Age > 18));
     /// </summary>
     public static IQueryable<T> ApplyFilter<T>(this IQueryable<T> query, Func<IQueryable<T>, IQueryable<T>>? filter)
     {
@@ -41,7 +41,6 @@ public static class QueryExtensions
 
     /// <summary>
     /// Applica ordering dinamico tramite una lambda che riceve IQueryable e ritorna IOrderedQueryable.
-    /// Uso: query = query.ApplyOrdering(q => q.OrderBy(x => x.LastName).ThenByDescending(x => x.Age));
     /// </summary>
     public static IQueryable<T> ApplyOrdering<T>(this IQueryable<T> query, Func<IQueryable<T>, IOrderedQueryable<T>>? orderBy)
     {
@@ -54,9 +53,8 @@ public static class QueryExtensions
     }
 
     /// <summary>
-    /// Helper che applica una serie di ordinamenti specificati come (selector, ascending) in sequenza.
-    /// Retrocompatibile (usa Expression<Func<T, object>>) - può introdurre boxing/boxing-like conversions.
-    /// Uso: query = query.OrderByFields((x => x.LastName, true), (x => x.FirstName, true));
+    /// Overload non tipizzato per applicare più ordinamenti tramite selectors già espressi (Expression{Func{T,object}}).
+    /// Retrocompatibilità (potrebbe introdurre conversioni).
     /// </summary>
     public static IQueryable<T> OrderByFields<T>(this IQueryable<T> source, params (Expression<Func<T, object>> selector, bool ascending)[] orderings)
     {
@@ -85,10 +83,8 @@ public static class QueryExtensions
     }
 
     /// <summary>
-    /// Overload tipizzato per OrderByFields per evitare boxing.
-    /// Tutti i selectors passati devono avere lo stesso tipo di chiave TKey.
-    /// Uso: query = query.OrderByFields<string>((x => x.LastName, true), (x => x.FirstName, true));
-    /// oppure type inference: query.OrderByFields((Expression<Func<T,string>>) (x => x.LastName), true) ... (meglio specificare TKey esplicitamente quando necessario)
+    /// Overload tipizzato per evitare conversioni.
+    /// Tutti i selectors devono avere lo stesso tipo TKey.
     /// </summary>
     public static IQueryable<T> OrderByFields<T, TKey>(this IQueryable<T> source, params (Expression<Func<T, TKey>> selector, bool ascending)[] orderings)
     {
@@ -117,8 +113,62 @@ public static class QueryExtensions
     }
 
     /// <summary>
+    /// Applica ordinamento dinamico a partire dai nomi delle proprietà (supporta nested tramite dot notation).
+    /// Esegue OrderBy/ThenBy dinamicamente costruendo expression generiche (nessuno switch necessario).
+    /// </summary>
+    public static IQueryable<T> OrderByPropertyNames<T>(this IQueryable<T> source, params (string propertyName, bool ascending)[] orderings)
+    {
+        if (orderings == null || orderings.Length == 0)
+        {
+            return source;
+        }
+
+        var param = Expression.Parameter(typeof(T), "x");
+        var currentExpr = source.Expression;
+
+        var provider = source.Provider;
+        var first = true;
+
+        foreach (var ord in orderings)
+        {
+            // support nested properties: "Address.City.Name"
+            Expression? propertyExp = param;
+            foreach (var member in ord.propertyName.Split('.'))
+            {
+                propertyExp = Expression.PropertyOrField(propertyExp!, member);
+            }
+
+            var propType = propertyExp!.Type;
+
+            // costruisco lambda: Func<T, propType>
+            var delegateType = typeof(Func<,>).MakeGenericType(typeof(T), propType);
+            var lambda = Expression.Lambda(delegateType, propertyExp, param);
+
+            string methodName;
+            if (first)
+            {
+                methodName = ord.ascending ? "OrderBy" : "OrderByDescending";
+            }
+            else
+            {
+                methodName = ord.ascending ? "ThenBy" : "ThenByDescending";
+            }
+
+            // recupero MethodInfo generico dalla reflection
+            var methods = typeof(Queryable).GetMethods(BindingFlags.Public | BindingFlags.Static)
+                .Where(m => m.Name == methodName && m.GetParameters().Length == 2).ToArray();
+            var method = methods.First();
+            var genericMethod = method.MakeGenericMethod(typeof(T), propType);
+
+            currentExpr = Expression.Call(genericMethod, currentExpr!, Expression.Quote(lambda));
+            first = false;
+        }
+
+        return provider.CreateQuery<T>(currentExpr!);
+    }
+
+    /// <summary>
     /// Applica paginazione: costruisce la query con Skip/Take.
-    /// Uso: var pageQuery = query.ApplyPagination(page, pageSize);
     /// </summary>
     public static IQueryable<T> ApplyPagination<T>(this IQueryable<T> source, int page, int pageSize)
     {
@@ -137,7 +187,7 @@ public static class QueryExtensions
     }
 
     /// <summary>
-    /// Esegue la query e ritorna un PagedResult con count totale e items.
+    /// Esegue la query e ritorna un PagedResult (dal Domain) con count totale e items.
     /// </summary>
     public static async Task<PagedResult<T>> ToPagedResultAsync<T>(this IQueryable<T> source, int page, int pageSize, CancellationToken ct = default)
     {
