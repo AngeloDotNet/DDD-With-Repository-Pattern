@@ -1,10 +1,10 @@
-﻿using System.Linq.Expressions;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Repository.API.DTOs;
 using Repository.Application.Services;
 using Repository.Domain.Entities;
 using Repository.Domain.Repositories.Interfaces;
-using Repository.Infrastructure.Extensions;
+using Repository.Infrastructure.Middleware;
+using Repository.Infrastructure.Models;
 
 namespace Repository.API.Controllers;
 
@@ -12,6 +12,9 @@ namespace Repository.API.Controllers;
 [Route("api/[controller]")]
 public class PersonController(PersonService service, IReadRepository<Person, Guid> reader) : ControllerBase
 {
+    // Whitelist per proprietà che possono essere usate nel sorting (case-insensitive)
+    private static readonly string[] allowedSortProperties = ["FirstName", "LastName", "Age"];
+
     [HttpPost]
     public async Task<IActionResult> CreateAsync([FromBody] PersonCreateDto dto, CancellationToken ct)
     {
@@ -87,64 +90,52 @@ public class PersonController(PersonService service, IReadRepository<Person, Gui
     }
 
     // Endpoint di ricerca/paginazione/ordinamento dinamico via query string.
-    // Supporta sorting per nomi proprietà (anche nested con dot notation), senza switch manuale.
-    // Esempio: GET /api/person/search?firstName=mar&minAge=20&sortBy=lastName,age&sortDir=asc,desc&page=1&size=10
+    // Ora prende i parametri mappati dal middleware QueryMappingMiddleware.
     [HttpGet("search")]
-    public async Task<IActionResult> Search(
-        [FromQuery] string? firstName,
-        [FromQuery] string? lastName,
-        [FromQuery] int? minAge,
-        [FromQuery] int? maxAge,
-        [FromQuery] string? sortBy,        // comma separated property names
-        [FromQuery] string? sortDir,       // comma separated directions: asc/desc
-        [FromQuery] int page = 1,
-        [FromQuery] int size = 10,
-        CancellationToken ct = default)
+    public async Task<IActionResult> SearchAsync(CancellationToken ct = default)
     {
-        // filtro dinamico come lambda
+        // Recupero i parametri mappati dal middleware
+        var qp = HttpContext.Items[QueryMappingMiddleware.HttpContextKey] as QueryParameters ?? new QueryParameters();
+
         Func<IQueryable<Person>, IQueryable<Person>>? filter = q =>
         {
-            if (!string.IsNullOrWhiteSpace(firstName))
+            if (!string.IsNullOrWhiteSpace(qp.FirstName))
             {
-                q = q.Where(p => p.FirstName.Contains(firstName));
+                q = q.Where(p => p.FirstName.Contains(qp.FirstName));
             }
 
-            if (!string.IsNullOrWhiteSpace(lastName))
+            if (!string.IsNullOrWhiteSpace(qp.LastName))
             {
-                q = q.Where(p => p.LastName.Contains(lastName));
+                q = q.Where(p => p.LastName.Contains(qp.LastName));
             }
 
-            if (minAge.HasValue)
+            if (qp.MinAge.HasValue)
             {
-                q = q.Where(p => p.Age >= minAge.Value);
+                q = q.Where(p => p.Age >= qp.MinAge.Value);
             }
 
-            if (maxAge.HasValue)
+            if (qp.MaxAge.HasValue)
             {
-                q = q.Where(p => p.Age <= maxAge.Value);
+                q = q.Where(p => p.Age <= qp.MaxAge.Value);
             }
 
             return q;
         };
 
-        // costruisco ordinamenti dinamici da query string
-        Func<IQueryable<Person>, IOrderedQueryable<Person>>? orderBy = null;
-
-        if (!string.IsNullOrWhiteSpace(sortBy))
+        // Validazione whitelist per sortBy
+        if (!string.IsNullOrWhiteSpace(qp.SortBy))
         {
-            var fields = sortBy.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            var dirs = (sortDir ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var fields = qp.SortBy.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var invalid = fields.FirstOrDefault(f => !allowedSortProperties.Any(a => a.Equals(f, StringComparison.OrdinalIgnoreCase)));
 
-            var orderings = fields
-                .Select((f, i) => (propertyName: f, ascending: (i < dirs.Length ? dirs[i] : "asc").Equals("asc", StringComparison.OrdinalIgnoreCase)))
-                .ToArray();
-
-            orderBy = q => (IOrderedQueryable<Person>)q.OrderByPropertyNames(orderings);
+            if (invalid != null)
+            {
+                return BadRequest($"Sorting by '{invalid}' is not allowed.");
+            }
         }
 
-        Expression<Func<Person, object>>[]? includes = null; // aggiungi include se necessario
-
-        var paged = await reader.FindPagedAsync(filter, orderBy, includes, page, size, ct);
+        // Uso overload string-based di FindPagedAsync
+        var paged = await reader.FindPagedAsync(filter, qp.SortBy, qp.SortDir, null, qp.Page, qp.Size, ct);
         return Ok(paged);
     }
 }
